@@ -10,6 +10,9 @@ O ajuste abrange título, autoria, orientador, banca, data, hora e local. Na
 exportação, confere o texto visível de cada caixa no PDF e, se necessário, reduz
 a fonte novamente antes de gerar a imagem. O tamanho mínimo é 8 pontos; textos
 que ainda não caibam causam erro, sem entregar um cartaz cortado.
+Título e composição da banca usam alinhamento justificado. O espaço livre da
+caixa da banca é distribuído entre os membros, mantendo as posições das caixas
+e evitando uma área vazia excessiva abaixo do último nome.
 
 Na mesma execução, também gera o **convite da banca** com o modelo enviado,
 preservando a arte e a assinatura da coordenação. Aluno, título, data, hora,

@@ -50,6 +50,7 @@ def largura_texto(texto, fonte):
 class Composicao:
     fonte: float
     paragrafos: list[list[str]]
+    espaco_paragrafos: float = 0
 
 
 def normalizar(texto):
@@ -89,11 +90,14 @@ def compor(chave, textos, limite=None):
     altura = caixa.altura - 2 * MARGEM_Y - 2
     def tentar(fonte):
         paragrafos = [quebrar_linhas(t, largura, fonte) for t in textos if t.strip()]
-        altura_texto = sum(len(p) for p in paragrafos) * fonte * 1.2
-        if chave == "banca":
-            altura_texto += max(0, len(paragrafos) - 1) * 5
+        altura_linhas = sum(len(p) for p in paragrafos) * fonte * 1.2
+        intervalos = max(0, len(paragrafos) - 1) if chave == "banca" else 0
+        altura_texto = altura_linhas + intervalos * 5
         if altura_texto <= altura:
-            return Composicao(fonte, paragrafos)
+            # Distribui o espaço livre entre os membros, em vez de deixá-lo
+            # acumulado abaixo do último. Arredonda para baixo em twips.
+            espaco = math.floor((altura - altura_linhas) / intervalos * 20) / 20 if intervalos else 0
+            return Composicao(fonte, paragrafos, espaco)
         return None
 
     # Rejeita textos impossíveis antes de medir todos os tamanhos intermediários.
@@ -128,9 +132,9 @@ def paragrafos_xml(chave, composicao):
         p = elemento("w:p")
         props = elemento("w:pPr")
         props.append(elemento("w:spacing", before=0,
-                              after=100 if chave == "banca" and i < len(composicao.paragrafos) - 1 else 0,
+                              after=round(composicao.espaco_paragrafos * 20) if i < len(composicao.paragrafos) - 1 else 0,
                               line=round(composicao.fonte * 1.2 * 20), lineRule="exact"))
-        props.append(elemento("w:jc", val="center" if CAIXAS[chave].centro else "left"))
+        props.append(elemento("w:jc", val="center" if CAIXAS[chave].centro else "both"))
         props.append(elemento("w:widowControl", val=0))
         p.append(props)
         r = elemento("w:r")

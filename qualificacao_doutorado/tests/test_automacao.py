@@ -165,6 +165,24 @@ class AutomacaoTest(unittest.TestCase):
                 fallback = tree.xpath(f'//v:shape[@id="PPEB_{chave}"]//w:t/text()', namespaces=NS)
                 self.assertEqual(modern, fallback)
 
+    def test_titulo_e_banca_justificados_e_espaco_distribuido(self):
+        self.assertEqual(self.executar(), 0)
+        with ZipFile(next((self.root / 'saida').glob('*/Cartaz*.docx'))) as z:
+            tree = etree.fromstring(z.read('word/document.xml'))
+            for caminho in ('//wp:anchor[wp:docPr/@name="PPEB_{chave}"]',
+                            '//v:shape[@id="PPEB_{chave}"]'):
+                for chave in ('titulo', 'banca'):
+                    paragrafos = tree.xpath(caminho.format(chave=chave) + '//w:txbxContent/w:p', namespaces=NS)
+                    self.assertTrue(paragrafos)
+                    self.assertTrue(all(p.xpath('./w:pPr/w:jc/@w:val', namespaces=NS) == ['both']
+                                        for p in paragrafos))
+                    if chave == 'banca':
+                        espacos = [int(p.xpath('./w:pPr/w:spacing/@w:after', namespaces=NS)[0])
+                                   for p in paragrafos]
+                        self.assertEqual(espacos[-1], 0)
+                        self.assertTrue(all(e > 100 for e in espacos[:-1]))
+                        self.assertEqual(len(set(espacos[:-1])), 1)
+
     def test_texto_impossivel_de_encaixar_falha_sem_cortar(self):
         self.alterar("Título", "Texto enorme " * 1000)
         self.assertEqual(self.executar(), 1)
@@ -270,6 +288,21 @@ class AutomacaoTest(unittest.TestCase):
             self.assertEqual(conferir_pdf(pdf, ctx), [])
             with pymupdf.open(pdf) as doc:
                 self.assertEqual(len(doc), 1)
+                banca = CAIXAS['banca']
+                area_banca = pymupdf.Rect(banca.x, banca.y, banca.x + banca.largura, banca.y + banca.altura)
+                palavras = doc[0].get_text('words', clip=area_banca)
+                # O último membro ocupa a parte inferior, sem encostar na borda.
+                sobra = area_banca.y1 - max(p[3] for p in palavras)
+                self.assertGreater(sobra, 0)
+                self.assertLess(sobra, 12)
+                if not alteracoes:
+                    titulo = CAIXAS['titulo']
+                    area = pymupdf.Rect(titulo.x, titulo.y, titulo.x + titulo.largura, titulo.y + titulo.altura)
+                    blocos = doc[0].get_text('dict', clip=area)['blocks']
+                    linhas = [l for b in blocos for l in b.get('lines', [])]
+                    self.assertGreater(len(linhas), 1)
+                    for linha in linhas[:-1]:
+                        self.assertAlmostEqual(linha['bbox'][2], area.x1 - 7, delta=2)
                 # Verifica os retângulos efetivamente desenhados, além das âncoras do DOCX.
                 rects = [d["rect"] for d in doc[0].get_drawings()]
                 for caixa in CAIXAS.values():
