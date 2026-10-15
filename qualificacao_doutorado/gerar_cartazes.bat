@@ -8,7 +8,7 @@ if not exist ".venv\Scripts\python.exe" (
 if errorlevel 1 goto erro
 .venv\Scripts\python.exe run.py
 if errorlevel 1 goto erro
-echo Cartazes gerados. Confira a pasta cartazes_gerados.
+echo Cartazes e convites gerados. Confira as pastas com os nomes dos alunos nesta pasta.
 pause
 exit /b 0
 :erro

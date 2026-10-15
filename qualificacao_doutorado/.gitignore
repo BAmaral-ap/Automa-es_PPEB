@@ -1,3 +1,10 @@
 .venv/
 __pycache__/
 cartazes_gerados/
+.cartaz-*/
+/*/Cartaz - *.docx
+/*/Cartaz - *.pdf
+/*/Cartaz - *.png
+/*/Convite - *.docx
+/*/Convite - *.pdf
+/*/Convite - *.png

@@ -272,7 +272,8 @@ def main(argv=None):
     parser.add_argument("--planilha", type=Path, default=BASE / "dados_qualificacao_doutorado.xlsx")
     parser.add_argument("--modelo", type=Path, default=BASE / "modelo_qualificacao_doutorado.docx")
     parser.add_argument("--modelo-convite", type=Path, default=BASE / "modelo_convite_doutorado.docx")
-    parser.add_argument("--saida", type=Path, default=BASE / "cartazes_gerados")
+    parser.add_argument("--saida", type=Path, default=BASE,
+                        help="Pasta base das pastas dos alunos (padrão: pasta deste script)")
     parser.add_argument("--formato", choices=("todos", "docx"), default="todos",
                         help="todos: cartaz e convite em DOCX, PDF e PNG; docx: os dois editáveis")
     parser.add_argument("--conversor", choices=("auto", "libreoffice", "word"), default="auto")

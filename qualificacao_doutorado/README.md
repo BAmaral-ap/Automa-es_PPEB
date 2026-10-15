@@ -27,11 +27,28 @@ no PDF antes de gerar o PNG. Revise os dois documentos antes de divulgar.
 2. Edite `dados_qualificacao_doutorado.xlsx`, aba **Dados**: uma linha por aluno.
    A linha de Adrian é um exemplo; substitua-a ou exclua-a se não quiser gerar seu cartaz.
 3. Feche a planilha e dê dois cliques em `gerar_cartazes.bat`.
-4. Abra `cartazes_gerados`: na pasta de cada aluno estarão `Cartaz - NOME` e
-   `Convite - NOME`, cada um em DOCX, PDF e PNG em 300 dpi.
+4. Uma pasta com o nome de cada aluno será criada diretamente nesta pasta,
+   ao lado de `run.py` e `gerar_cartazes.bat`, como nas automações de mestrado.
+   Dentro dela estarão `Cartaz - NOME` e `Convite - NOME`, cada um em DOCX, PDF e
+   PNG em 300 dpi. No modo `--formato docx`, estarão apenas os dois editáveis.
+
+Exemplo de organização:
+
+```text
+qualificacao_doutorado/
+  run.py
+  gerar_cartazes.bat
+  ADRIAN SOUZA DOS SANTOS/
+    Cartaz - ADRIAN SOUZA DOS SANTOS.docx
+    Cartaz - ADRIAN SOUZA DOS SANTOS.pdf
+    Cartaz - ADRIAN SOUZA DOS SANTOS.png
+    Convite - ADRIAN SOUZA DOS SANTOS.docx
+    Convite - ADRIAN SOUZA DOS SANTOS.pdf
+    Convite - ADRIAN SOUZA DOS SANTOS.png
+```
 
 O arquivo BAT instala as bibliotecas em uma pasta `.venv` e exibe eventuais erros.
-Uma nova execução protege as pastas existentes: renomeie a pasta de saída ou use
+Uma nova execução protege as pastas existentes: renomeie a pasta do aluno ou use
 `--sobrescrever` conscientemente pela linha de comando.
 
 ## Uso pela linha de comando (Linux, macOS e Windows)
@@ -62,6 +79,8 @@ python run.py --formato docx
 python run.py --modelo-convite meu_modelo_convite.docx
 # Planilha e saída diferentes:
 python run.py --planilha meus_dados.xlsx --saida nova_saida
+# Para manter todas as pastas dos alunos dentro de cartazes_gerados:
+python run.py --saida cartazes_gerados
 # Selecionar o conversor:
 python run.py --conversor word
 python run.py --conversor libreoffice --soffice "/caminho/para/soffice"
@@ -72,6 +91,8 @@ python run.py --sobrescrever
 Também é possível definir `SOFFICE_PATH` com o caminho do LibreOffice.
 Os caminhos padrão são relativos à pasta do script, independentemente de onde
 ele for chamado. Nenhum serviço ou credencial é necessário.
+`--saida` muda a pasta base; dentro dela, cada pessoa continua tendo sua própria
+pasta. Saídas antigas dentro de `cartazes_gerados` não são movidas ou apagadas.
 
 ## Preenchimento da planilha
 

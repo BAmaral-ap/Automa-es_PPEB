@@ -2,6 +2,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from datetime import datetime, time
 import io
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -53,6 +54,31 @@ class AutomacaoTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             return run.main(["--planilha", str(self.planilha), "--saida", str(self.root / "saida"),
                              "--formato", "docx", *extras])
+
+    def test_saida_padrao_separa_pessoas_ao_lado_do_script(self):
+        from unittest.mock import patch
+        base = self.root / 'automacao'
+        base.mkdir()
+        for nome in ('modelo_qualificacao_doutorado.docx', 'modelo_convite_doutorado.docx',
+                     'dados_qualificacao_doutorado.xlsx'):
+            shutil.copy2(run.BASE / nome, base / nome)
+        wb = load_workbook(base / 'dados_qualificacao_doutorado.xlsx')
+        ws = wb['Dados']
+        valores = [c.value for c in ws[2]]
+        valores[[c.value for c in ws[1]].index('Aluno')] = 'ANA MARIA'
+        ws.append(valores)
+        wb.save(base / 'dados_qualificacao_doutorado.xlsx')
+        wb.close()
+        with patch.object(run, 'BASE', base), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(run.main(['--formato', 'docx']), 0)
+        for aluno in ('ADRIAN SOUZA DOS SANTOS', 'ANA MARIA'):
+            pasta = base / aluno
+            self.assertEqual(sorted(p.name for p in pasta.iterdir()),
+                             [f'Cartaz - {aluno}.docx', f'Convite - {aluno}.docx'])
+            with ZipFile(pasta / f'Convite - {aluno}.docx') as z:
+                tree = etree.fromstring(z.read('word/document.xml'))
+                self.assertIn(aluno, ''.join(tree.xpath('//w:t/text()', namespaces=NS)))
+        self.assertFalse((base / 'cartazes_gerados').exists())
 
     def test_geracao_preserva_imagens_e_estrutura(self):
         self.assertEqual(self.executar(), 0)
