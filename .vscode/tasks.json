@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Atualizar do GitHub automaticamente",
+      "type": "process",
+      "command": "python3",
+      "args": ["-u", "${workspaceFolder}/ferramentas/atualizar_repositorio.py"],
+      "windows": {
+        "command": "py",
+        "args": ["-3", "-u", "${workspaceFolder}/ferramentas/atualizar_repositorio.py"]
+      },
+      "options": {"cwd": "${workspaceFolder}"},
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {"reveal": "silent", "panel": "dedicated"},
+      "runOptions": {"runOn": "folderOpen", "instanceLimit": 1}
+    }
+  ]
+}
