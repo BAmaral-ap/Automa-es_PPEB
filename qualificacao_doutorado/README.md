@@ -1,4 +1,4 @@
-# Cartazes de qualificação de doutorado
+# Cartazes e convites de qualificação de doutorado
 
 Automação do cartaz enviado, com o mesmo fluxo de planilha → documento → imagem
 da automação de mestrado. O modelo mantém a arte original e usa caixas de texto
@@ -11,13 +11,21 @@ exportação, confere o texto visível de cada caixa no PDF e, se necessário, r
 a fonte novamente antes de gerar a imagem. O tamanho mínimo é 8 pontos; textos
 que ainda não caibam causam erro, sem entregar um cartaz cortado.
 
+Na mesma execução, também gera o **convite da banca** com o modelo enviado,
+preservando a arte e a assinatura da coordenação. Aluno, título, data, hora,
+local e integrantes da banca vêm da mesma linha da planilha. Membros opcionais
+vazios são omitidos. O corpo do convite reduz a fonte, de 12 até 8 pontos quando
+necessário, para caber antes da assinatura; a exportação confere o texto visível
+no PDF antes de gerar o PNG. Revise os dois documentos antes de divulgar.
+
 ## Uso no Windows
 
 1. Instale Python 3.10 ou superior e Microsoft Word ou LibreOffice.
 2. Edite `dados_qualificacao_doutorado.xlsx`, aba **Dados**: uma linha por aluno.
    A linha de Adrian é um exemplo; substitua-a ou exclua-a se não quiser gerar seu cartaz.
 3. Feche a planilha e dê dois cliques em `gerar_cartazes.bat`.
-4. Abra `cartazes_gerados`: cada aluno terá seu DOCX, PDF e PNG em 300 dpi.
+4. Abra `cartazes_gerados`: na pasta de cada aluno estarão `Cartaz - NOME` e
+   `Convite - NOME`, cada um em DOCX, PDF e PNG em 300 dpi.
 
 O arquivo BAT instala as bibliotecas em uma pasta `.venv` e exibe eventuais erros.
 Uma nova execução protege as pastas existentes: renomeie a pasta de saída ou use
@@ -45,8 +53,10 @@ No Windows/macOS o script prefere LibreOffice quando disponível; caso contrári
 usa Microsoft Word por `docx2pdf`.
 
 ```sh
-# Apenas documentos editáveis, sem exigir Word ou LibreOffice:
+# Cartaz e convite editáveis, sem exigir Word ou LibreOffice:
 python run.py --formato docx
+# Usar outro modelo de convite compatível:
+python run.py --modelo-convite meu_modelo_convite.docx
 # Planilha e saída diferentes:
 python run.py --planilha meus_dados.xlsx --saida nova_saida
 # Selecionar o conversor:
@@ -92,10 +102,16 @@ Ao atualizar uma instalação antiga, substitua também
 `modelo_qualificacao_doutorado.docx` e inclua `layout.py`. O script novo exige o
 modelo com caixas fixas. Preserve sua planilha preenchida; seus dados continuam
 compatíveis com esta versão.
+Para gerar os convites, inclua também `convite.py` e
+`modelo_convite_doutorado.docx`. Ao personalizar esse modelo, preserve os campos
+de preenchimento, as condições dos membros opcionais e a caixa `PPEB_convite`.
+A identificação, portaria e assinatura da coordenação são fixas no modelo;
+atualize-as nele quando necessário.
 
 O script retorna código diferente de zero quando há falhas e informa quais
-linhas falharam. Os arquivos de cada cartaz são preparados em uma pasta temporária
-e só são entregues após a geração completa desse cartaz. Linhas anteriores que
+linhas falharam. Cartaz e convite de cada aluno são preparados em uma pasta
+temporária e só são entregues após a geração completa dos dois. Se o convite
+falhar, o cartaz dessa linha também não é entregue. Linhas anteriores que
 passaram permanecem disponíveis se uma linha posterior falhar.
 
 ## Validação
@@ -109,6 +125,7 @@ datas/horários, proteção de arquivos e rejeição de dados inválidos. També
 verificam que textos maiores reduzem a fonte sem mudar a geometria das caixas.
 Se LibreOffice estiver disponível (no PATH ou em `SOFFICE_PATH`), executam a
 conversão de exemplos curtos e longos, conferindo todo o texto e as posições dos
-retângulos no PDF. Esse teste é marcado como ignorado quando não há LibreOffice.
+retângulos no PDF, além do texto completo do convite, sua assinatura e seu PNG.
+Esse teste é marcado como ignorado quando não há LibreOffice.
 O exemplo também deve ser executado com `python run.py --saida /caminho/de/teste`
 para validar o conversor instalado e conferir visualmente o resultado.

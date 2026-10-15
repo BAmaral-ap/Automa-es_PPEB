@@ -1,4 +1,4 @@
-"""Gera cartazes de qualificação de doutorado a partir de uma planilha."""
+"""Gera cartazes e convites de qualificação de doutorado a partir de uma planilha."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,7 @@ from docxtpl import DocxTemplate
 from jinja2 import Environment, StrictUndefined
 from lxml import etree
 from openpyxl import load_workbook
+from convite import FONTE_MAXIMA, conferir_pdf_convite, gerar_docx_convite
 from layout import (CAIXAS, FONTE_MINIMA, aplicar_composicao, compor,
                     conferir_pdf, textos_caixas)
 
@@ -210,15 +211,32 @@ def gerar_png(pdf, dpi):
     import pymupdf
     with pymupdf.open(pdf) as doc:
         if len(doc) != 1:
-            raise ValueError(f"Cartaz ficou com {len(doc)} páginas. Reduza Fonte Título ou "
-                             "ajuste nomes/layout no modelo antes de divulgar.")
+            raise ValueError(f"Documento ficou com {len(doc)} páginas. Reduza o texto ou "
+                             "ajuste o modelo antes de divulgar.")
         doc[0].get_pixmap(dpi=dpi, alpha=False).save(pdf.with_suffix(".png"))
+
+
+def gerar_convite(modelo, docx, contexto, conversor, soffice, dpi):
+    limite = FONTE_MAXIMA
+    while limite >= FONTE_MINIMA:
+        fonte, esperado = gerar_docx_convite(modelo, docx, contexto, limite)
+        if conversor is None:
+            return
+        pdf = gerar_pdf(docx, conversor, soffice)
+        if conferir_pdf_convite(pdf, esperado):
+            gerar_png(pdf, dpi)
+            return
+        limite = fonte - 0.5
+    raise ValueError("O texto do convite não ficou integralmente visível. "
+                     "Reduza o texto ou confira a fonte instalada.")
 
 
 def executar(args):
     registros = ler_planilha(args.planilha)
     if not args.modelo.is_file():
         raise ValueError(f"Modelo não encontrado: {args.modelo}")
+    if not args.modelo_convite.is_file():
+        raise ValueError(f"Modelo de convite não encontrado: {args.modelo_convite}")
     soffice = localizar_soffice(args.soffice)
     conversor = escolher_conversor(args.conversor, soffice) if args.formato == "todos" else None
     args.saida.mkdir(parents=True, exist_ok=True)
@@ -232,6 +250,8 @@ def executar(args):
             with tempfile.TemporaryDirectory(prefix=".cartaz-", dir=args.saida) as staging:
                 docx = Path(staging) / f"Cartaz - {pasta}.docx"
                 gerar_arquivos(args.modelo, docx, ctx, fonte, conversor, soffice, args.dpi)
+                convite = Path(staging) / f"Convite - {pasta}.docx"
+                gerar_convite(args.modelo_convite, convite, ctx, conversor, soffice, args.dpi)
                 destino = args.saida / pasta
                 destino.mkdir(exist_ok=True)
                 for arquivo in Path(staging).iterdir():
@@ -243,7 +263,7 @@ def executar(args):
         except Exception as exc:
             falhas += 1
             print(f"[ERRO] Linha {numero}: {exc}", file=sys.stderr)
-    print(f"Concluído: {len(registros) - falhas} cartaz(es) gerado(s); {falhas} falha(s).")
+    print(f"Concluído: {len(registros) - falhas} conjunto(s) de cartaz e convite gerado(s); {falhas} falha(s).")
     return 1 if falhas else 0
 
 
@@ -251,9 +271,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--planilha", type=Path, default=BASE / "dados_qualificacao_doutorado.xlsx")
     parser.add_argument("--modelo", type=Path, default=BASE / "modelo_qualificacao_doutorado.docx")
+    parser.add_argument("--modelo-convite", type=Path, default=BASE / "modelo_convite_doutorado.docx")
     parser.add_argument("--saida", type=Path, default=BASE / "cartazes_gerados")
     parser.add_argument("--formato", choices=("todos", "docx"), default="todos",
-                        help="todos: DOCX, PDF e PNG; docx: apenas documento editável")
+                        help="todos: cartaz e convite em DOCX, PDF e PNG; docx: os dois editáveis")
     parser.add_argument("--conversor", choices=("auto", "libreoffice", "word"), default="auto")
     parser.add_argument("--soffice", help="Caminho do executável LibreOffice")
     parser.add_argument("--dpi", type=int, default=300)

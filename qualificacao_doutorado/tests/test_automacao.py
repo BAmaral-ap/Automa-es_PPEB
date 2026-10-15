@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import run
+from convite import CAIXA_CORPO, conferir_pdf_convite
 from layout import CAIXAS, NS, conferir_pdf
 
 
@@ -55,7 +56,7 @@ class AutomacaoTest(unittest.TestCase):
 
     def test_geracao_preserva_imagens_e_estrutura(self):
         self.assertEqual(self.executar(), 0)
-        docx = next((self.root / "saida").glob("*/*.docx"))
+        docx = next((self.root / "saida").glob("*/Cartaz*.docx"))
         ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
         with ZipFile(docx) as rendered, ZipFile(run.BASE / "modelo_qualificacao_doutorado.docx") as template:
             self.assertIsNone(rendered.testzip())
@@ -81,7 +82,7 @@ class AutomacaoTest(unittest.TestCase):
         titulo = "Educação & sociedade: <escola> {{ texto literal }}"
         self.alterar("Título", titulo)
         self.assertEqual(self.executar(), 0)
-        with ZipFile(next((self.root / "saida").glob("*/*.docx"))) as z:
+        with ZipFile(next((self.root / "saida").glob("*/Cartaz*.docx"))) as z:
             tree = etree.fromstring(z.read("word/document.xml"))
             self.assertIn(titulo, textos_modernos(tree))
 
@@ -94,7 +95,7 @@ class AutomacaoTest(unittest.TestCase):
         wb.save(self.planilha)
         wb.close()
         self.assertEqual(self.executar(), 0)
-        with ZipFile(next((self.root / "saida").glob("*/*.docx"))) as z:
+        with ZipFile(next((self.root / "saida").glob("*/Cartaz*.docx"))) as z:
             tree = etree.fromstring(z.read("word/document.xml"))
             texts = textos_modernos(tree)
             self.assertEqual(sum(" - Membro Externo" in t for t in texts), 2)
@@ -102,6 +103,48 @@ class AutomacaoTest(unittest.TestCase):
             ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
             self.assertNotIn("• ", texts)
             self.assertFalse(tree.xpath("//w:pPr/w:numPr", namespaces=ns))
+        with ZipFile(next((self.root / "saida").glob("*/Convite*.docx"))) as z:
+            tree = etree.fromstring(z.read("word/document.xml"))
+            corpo = tree.xpath('//wp:anchor[wp:docPr/@name="PPEB_convite"]//w:txbxContent', namespaces=NS)[0]
+            textos = corpo.xpath('.//w:t/text()', namespaces=NS)
+            self.assertEqual(sum(" - Membro Externo" in t for t in textos), 2)
+            self.assertEqual(sum(" - Suplente" in t for t in textos), 1)
+            self.assertTrue(all("".join(p.xpath('.//w:t/text()', namespaces=NS)).strip()
+                                for p in corpo.findall('w:p', NS)))
+
+    def test_convite_preenche_planilha_e_preserva_arte_e_assinatura(self):
+        titulo = "Educação & sociedade: <escola> {{ texto literal }}"
+        self.alterar("Título", titulo)
+        self.assertEqual(self.executar(), 0)
+        arquivos = list((self.root / "saida").glob("*/*"))
+        self.assertEqual(sorted(p.suffix for p in arquivos), ['.docx', '.docx'])
+        convite = next(p for p in arquivos if p.name.startswith('Convite'))
+        with ZipFile(convite) as z, ZipFile(run.BASE / 'modelo_convite_doutorado.docx') as modelo:
+            self.assertIsNone(z.testzip())
+            tree = etree.fromstring(z.read('word/document.xml'))
+            corpos = tree.xpath('//wp:anchor[wp:docPr/@name="PPEB_convite"]//w:txbxContent | '
+                                '//v:shape[@id="PPEB_convite"]//w:txbxContent', namespaces=NS)
+            self.assertEqual(len(corpos), 2)
+            textos = ["".join(c.xpath('.//w:t/text()', namespaces=NS)) for c in corpos]
+            self.assertEqual(textos[0], textos[1])
+            for valor in (titulo, 'ADRIAN SOUZA DOS SANTOS', '31/03/2026', '14h00', 'Sala NEB-02 / NEB-UFPA'):
+                self.assertIn(valor, textos[0])
+            self.assertNotIn('VIVIAN DE LIMA CABRAL', textos[0])
+            self.assertNotIn('20/02/2026', textos[0])
+            self.assertNotIn('{%', textos[0])
+            for nome in modelo.namelist():
+                if nome.startswith('word/media/'):
+                    self.assertEqual(z.read(nome), modelo.read(nome))
+            original = etree.fromstring(modelo.read('word/document.xml'))
+            assinaturas = []
+            for t in (tree, original):
+                partes = [c for c in t.xpath('//w:txbxContent', namespaces=NS)
+                          if 'Atenciosamente' in ''.join(c.xpath('.//w:t/text()', namespaces=NS))]
+                self.assertEqual(len(partes), 2)
+                # Prefixos e declarações de namespace podem mudar sem alterar o XML.
+                assinaturas.append([[(e.tag, dict(e.attrib), e.text) for e in c.iter()]
+                                    for c in partes])
+            self.assertEqual(assinaturas[0], assinaturas[1])
 
     def test_textos_longos_reduzem_fontes_sem_mover_caixas(self):
         self.alterar("Título", "Educação, currículo e políticas de gestão democrática nas escolas públicas. " * 5)
@@ -109,7 +152,7 @@ class AutomacaoTest(unittest.TestCase):
         self.alterar("Orientador", "Profª. Drª. Maria Aparecida de Albuquerque de Souza e Silva")
         self.alterar("Sala", "Auditório do Núcleo de Estudos em Educação Básica, Campus Belém - UFPA")
         self.assertEqual(self.executar(), 0)
-        with ZipFile(next((self.root / "saida").glob("*/*.docx"))) as z, \
+        with ZipFile(next((self.root / "saida").glob("*/Cartaz*.docx"))) as z, \
                 ZipFile(run.BASE / "modelo_qualificacao_doutorado.docx") as original:
             tree = etree.fromstring(z.read("word/document.xml"))
             self.assertEqual(geometria(tree), geometria(etree.fromstring(original.read("word/document.xml"))))
@@ -129,7 +172,7 @@ class AutomacaoTest(unittest.TestCase):
 
     def test_nao_sobrescreve_sem_opcao(self):
         self.assertEqual(self.executar(), 0)
-        path = next((self.root / "saida").glob("*/*.docx"))
+        path = next((self.root / "saida").glob("*/Cartaz*.docx"))
         before = path.read_bytes()
         self.alterar("Título", "Título novo")
         self.assertEqual(self.executar(), 1)
@@ -187,6 +230,16 @@ class AutomacaoTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertFalse(list((self.root / "saida").glob("*/*.docx")))
 
+    def test_falha_no_convite_nao_entrega_cartaz_parcial(self):
+        from unittest.mock import patch
+        with patch.object(run, 'gerar_convite', side_effect=RuntimeError('Convite inválido')):
+            self.assertEqual(self.executar(), 1)
+        self.assertFalse(list((self.root / 'saida').glob('*/*')))
+
+    def test_modelo_convite_ausente_nao_produz_arquivos(self):
+        self.assertEqual(self.executar('--modelo-convite', str(self.root / 'ausente.docx')), 1)
+        self.assertFalse((self.root / 'saida').exists())
+
     @unittest.skipUnless(run.localizar_soffice(), "LibreOffice não disponível")
     def test_pdf_real_preserva_caixas_e_texto_curto_e_longo(self):
         import pymupdf
@@ -213,7 +266,7 @@ class AutomacaoTest(unittest.TestCase):
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
                 code = run.main(["--planilha", str(self.planilha), "--saida", str(saida), "--dpi", "72"])
             self.assertEqual(code, 0, alteracoes)
-            pdf = next(saida.glob("*/*.pdf"))
+            pdf = next(saida.glob("*/Cartaz*.pdf"))
             self.assertEqual(conferir_pdf(pdf, ctx), [])
             with pymupdf.open(pdf) as doc:
                 self.assertEqual(len(doc), 1)
@@ -222,6 +275,23 @@ class AutomacaoTest(unittest.TestCase):
                 for caixa in CAIXAS.values():
                     target = pymupdf.Rect(caixa.x, caixa.y, caixa.x + caixa.largura, caixa.y + caixa.altura)
                     self.assertTrue(any(max(abs(a-b) for a,b in zip(rect, target)) < 1 for rect in rects), target)
+            convite = next(saida.glob('*/Convite*.pdf'))
+            with ZipFile(convite.with_suffix('.docx')) as z:
+                tree = etree.fromstring(z.read('word/document.xml'))
+                corpo = tree.xpath('//wp:anchor[wp:docPr/@name="PPEB_convite"]//w:txbxContent', namespaces=NS)[0]
+                esperado = ' '.join(''.join(p.xpath('.//w:t/text()', namespaces=NS))
+                                    for p in corpo.findall('w:p', NS))
+            self.assertTrue(conferir_pdf_convite(convite, esperado), alteracoes)
+            with pymupdf.open(convite) as doc:
+                self.assertEqual(len(doc), 1)
+                self.assertIn('Atenciosamente', doc[0].get_text())
+                self.assertTrue(doc[0].get_images())
+                # Corpo termina antes da assinatura, inclusive com textos longos.
+                palavras = doc[0].get_text('words', clip=pymupdf.Rect(CAIXA_CORPO))
+                self.assertTrue(all(p[3] <= CAIXA_CORPO[3] for p in palavras))
+            imagem = pymupdf.Pixmap(str(convite.with_suffix('.png')))
+            self.assertGreater(imagem.width, 500)
+            self.assertEqual(len(list(saida.glob('*/*'))), 6)
 
 
 if __name__ == "__main__":
