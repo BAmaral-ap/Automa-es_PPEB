@@ -103,8 +103,17 @@ não exibem marcadores, e a caixa da banca mantém as mesmas dimensões.
 Universidades ficam em colunas separadas.
 Não escreva a função (Presidente, Suplente etc.) no nome: o script a adiciona.
 
-Digite os nomes dos professores com a titulação desejada, como `Profª. Drª. Nome`.
-O script preserva a grafia e não tenta deduzir gênero ou alterar nomes.
+Você pode digitar apenas os nomes do orientador e dos membros da banca:
+o script acrescenta `Prof. Dr.` ou `Profª. Drª.` automaticamente, tanto no cartaz
+quanto no convite. Segue a regra das automações de mestrado: primeiro nome
+terminado em "a" ou presente na lista de exceções femininas. Nomes sem titulação
+recebem iniciais maiúsculas, mantendo `da`, `de`, `do`, `das`, `dos` e `e` minúsculos.
+
+Por exemplo, `JOÃO DA SILVA` vira `Prof. Dr. João da Silva` e `RAQUEL DOS SANTOS`
+vira `Profª. Drª. Raquel dos Santos`. A regra pelo nome pode errar; para corrigir
+uma exceção, escreva a titulação desejada na planilha. Titulações completas já
+preenchidas são preservadas, sem duplicar os prefixos. Uma titulação parcial,
+como `Dra. Alex Silva`, também é respeitada e completada para `Profª. Drª. Alex Silva`.
 A planilha de exemplo transcreve os dados do documento recebido, inclusive
 titulações e grafia: revise-os antes de divulgar.
 

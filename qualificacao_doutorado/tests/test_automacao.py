@@ -55,6 +55,64 @@ class AutomacaoTest(unittest.TestCase):
             return run.main(["--planilha", str(self.planilha), "--saida", str(self.root / "saida"),
                              "--formato", "docx", *extras])
 
+    def test_titulacao_automatica_por_nome_e_excecoes(self):
+        casos = [
+            (None, ''), ('   ', ''), ('nan', ''),
+            ('JOÃO DA SILVA', 'Prof. Dr. João da Silva'),
+            ('MARIA DOS SANTOS', 'Profª. Drª. Maria dos Santos'),
+            ('RAQUEL DE SOUZA', 'Profª. Drª. Raquel de Souza'),
+            ('THAÍS DO NASCIMENTO', 'Profª. Drª. Thaís do Nascimento'),
+            ('ÍRIS ALMEIDA', 'Profª. Drª. Íris Almeida'),
+            ('Clarice Nascimento de Melo', 'Profª. Drª. Clarice Nascimento de Melo'),
+            ('Vivian da Silva Lobato', 'Profª. Drª. Vivian da Silva Lobato'),
+            ('Karine Nunes Moraes', 'Profª. Drª. Karine Nunes Moraes'),
+        ]
+        for entrada, esperado in casos:
+            with self.subTest(entrada=entrada):
+                self.assertEqual(run.formatar_professor(entrada), esperado)
+
+    def test_titulacao_explicita_tem_prioridade_e_nao_duplica(self):
+        completos = ['Prof. Dr. Raimundo Alberto de F. Damasceno',
+                     'Profª. Drª. Alex Silva', 'Profª Dr. Raul da Silva Ventura Neto',
+                     'Professora Doutora Maria de Souza', 'Prof. Dr. JOÃO DA SILVA']
+        for nome in completos:
+            with self.subTest(nome=nome):
+                self.assertEqual(run.formatar_professor(nome), nome)
+        for entrada, esperado in [
+            ('Dra. Alex Silva', 'Profª. Drª. Alex Silva'),
+            ('Profª. Alex Silva', 'Profª. Drª. Alex Silva'),
+            ('Dr. Maria Silva', 'Prof. Dr. Maria Silva'),
+            ('Prof. Luca Silva', 'Prof. Dr. Luca Silva'),
+        ]:
+            with self.subTest(entrada=entrada):
+                self.assertEqual(run.formatar_professor(entrada), esperado)
+
+    def test_titulacao_automatica_em_orientador_e_toda_banca_nos_dois_documentos(self):
+        nomes = {
+            'Orientador': ('JOÃO DA SILVA', 'Prof. Dr. João da Silva'),
+            'Presidente': ('RAIMUNDO DAMASCENO', 'Prof. Dr. Raimundo Damasceno'),
+            'Membro Interno': ('MARIA DO ROSÁRIO', 'Profª. Drª. Maria do Rosário'),
+            'Membro Externo 1': ('BEATRIZ ALMEIDA', 'Profª. Drª. Beatriz Almeida'),
+            'Membro Externo 2': ('CARLOS SOUZA', 'Prof. Dr. Carlos Souza'),
+            'Membro Externo 3': ('KARINE MORAES', 'Profª. Drª. Karine Moraes'),
+            'Suplente 1': ('VIVIAN LOBATO', 'Profª. Drª. Vivian Lobato'),
+            'Suplente 2': ('CLARICE MELO', 'Profª. Drª. Clarice Melo'),
+        }
+        for coluna, (entrada, _) in nomes.items():
+            self.alterar(coluna, entrada)
+        self.assertEqual(self.executar(), 0)
+        for docx in (self.root / 'saida').glob('*/*.docx'):
+            with self.subTest(documento=docx.name), ZipFile(docx) as z:
+                tree = etree.fromstring(z.read('word/document.xml'))
+                textos = ' '.join(textos_modernos(tree))
+                for coluna, (_, esperado) in nomes.items():
+                    # O modelo do convite lista a banca; orientador aparece no cartaz.
+                    if coluna != 'Orientador' or docx.name.startswith('Cartaz'):
+                        self.assertIn(esperado, textos)
+                self.assertIn('ADRIAN SOUZA DOS SANTOS', textos)
+                self.assertNotIn('Prof. Dr. Prof.', textos)
+                self.assertNotIn('Profª. Drª. Profª.', textos)
+
     def test_saida_padrao_separa_pessoas_ao_lado_do_script(self):
         from unittest.mock import patch
         base = self.root / 'automacao'
@@ -298,6 +356,10 @@ class AutomacaoTest(unittest.TestCase):
              "Membro Externo 2": "Prof. Dr. José de Albuquerque de Souza dos Santos de Almeida",
              "Universidade Externo 1": "Universidade Federal do Pará",
              "Universidade Externo 2": "Universidade Federal do Paraná"},
+            {"Orientador": "JOÃO DA SILVA", "Presidente": "RAIMUNDO DAMASCENO",
+             "Membro Interno": "MARIA DO ROSÁRIO", "Membro Externo 1": "BEATRIZ ALMEIDA",
+             "Membro Externo 2": "CARLOS SOUZA", "Membro Externo 3": "KARINE MORAES",
+             "Suplente 1": "VIVIAN LOBATO", "Suplente 2": "CLARICE MELO"},
         ]
         for i, alteracoes in enumerate(variantes):
             original = load_workbook(run.BASE / "dados_qualificacao_doutorado.xlsx")

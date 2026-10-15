@@ -33,10 +33,45 @@ MEMBROS = (
 )
 OBRIGATORIOS = ("Aluno", "Título", "Orientador", "Presidente", "Membro Interno",
                 "Membro Externo 1", "Data", "Hora", "Sala")
+# Mesma regra da qualificação de mestrado, incluindo nomes já usados nos modelos.
+FEMININOS_COMUNS = {
+    "beatriz", "raquel", "carmen", "simone", "aline", "viviane", "gisele",
+    "cleide", "sueli", "iris", "elis", "jane", "ivone", "ester", "thais",
+    "tais", "daniele", "tatiane", "fabiany", "vivian", "clarice", "karine",
+}
+PREFIXO_PROFESSOR = re.compile(
+    r"^(prof(?:essor(?:a)?)?[ªº°a]?\.?|dr[ªº°a]?\.?|doutor(?:a)?\.?)(?=\s|$)", re.I)
 
 
 def texto(valor):
     return "" if valor is None else str(valor).strip()
+
+
+def formatar_professor(nome):
+    original = texto(nome)
+    if not original or original.casefold() == "nan":
+        return ""
+    restante, prefixos = original, []
+    while match := PREFIXO_PROFESSOR.match(restante):
+        prefixos.append(match[1].casefold().rstrip('.'))
+        restante = restante[match.end():].lstrip()
+    if not restante:
+        return ""
+    professores = [p for p in prefixos if p.startswith('prof')]
+    doutores = [p for p in prefixos if p.startswith(('dr', 'doutor'))]
+    if professores and doutores:
+        return original
+    palavras = restante.split()
+    primeiro = ''.join(c for c in unicodedata.normalize('NFD', palavras[0].casefold())
+                       if not unicodedata.combining(c))
+    feminino = primeiro.endswith('a') or primeiro in FEMININOS_COMUNS
+    # Mesmo uma titulação parcial permite corrigir a escolha automática.
+    if doutores or professores:
+        feminino = (doutores or professores)[0].endswith(('a', 'ª'))
+    particulas = {'da', 'de', 'do', 'das', 'dos', 'e'}
+    nome_formatado = ' '.join(p.lower() if p.casefold() in particulas else p.capitalize()
+                              for p in palavras)
+    return ('Profª. Drª. ' if feminino else 'Prof. Dr. ') + nome_formatado
 
 
 def formatar_data(valor):
@@ -75,6 +110,9 @@ def nome_pasta(nome):
 
 
 def contexto_linha(linha):
+    linha = dict(linha)
+    for coluna in ("Orientador", *(membro[0] for membro in MEMBROS)):
+        linha[coluna] = formatar_professor(linha.get(coluna))
     faltam = [coluna for coluna in OBRIGATORIOS if not texto(linha.get(coluna))]
     if faltam:
         raise ValueError("Campos obrigatórios vazios: " + ", ".join(faltam))
