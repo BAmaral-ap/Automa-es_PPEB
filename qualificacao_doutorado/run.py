@@ -17,6 +17,8 @@ from docxtpl import DocxTemplate
 from jinja2 import Environment, StrictUndefined
 from lxml import etree
 from openpyxl import load_workbook
+from layout import (CAIXAS, FONTE_MINIMA, aplicar_composicao, compor,
+                    conferir_pdf, textos_caixas)
 
 BASE = Path(__file__).resolve().parent
 MEMBROS = (
@@ -84,7 +86,7 @@ def contexto_linha(linha):
             raise ValueError(f"{universidade} preenchida sem {coluna}.")
         ctx[chave] = f"{nome}" + (f" ({uni})" if uni else "") + f" - {papel}" if nome else ""
     fonte = texto(linha.get("Fonte Título"))
-    tamanho = float(fonte.replace(",", ".")) if fonte else (21 if len(ctx["titulo"]) <= 140 else 18 if len(ctx["titulo"]) <= 190 else 16)
+    tamanho = float(fonte.replace(",", ".")) if fonte else 21
     if not 8 <= tamanho <= 36:
         raise ValueError("Fonte Título deve estar entre 8 e 36 pontos.")
     return ctx, tamanho
@@ -125,40 +127,25 @@ def ler_planilha(caminho):
         wb.close()
 
 
-def gerar_docx(modelo, destino, contexto, fonte):
+def gerar_docx(modelo, destino, contexto, fonte, limites=None):
+    limites = limites or {}
+    composicoes = {
+        chave: compor(chave, textos, limites.get(chave, fonte if chave == "titulo" else CAIXAS[chave].fonte))
+        for chave, textos in textos_caixas(contexto).items()
+    }
     tpl = DocxTemplate(modelo)
     tpl.render(contexto, jinja_env=Environment(undefined=StrictUndefined), autoescape=True)
     tpl.save(destino)
-    # O original usa caixas de texto, que não aparecem em Document.paragraphs.
-    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     with ZipFile(destino) as arquivo:
         items = [(item, arquivo.read(item.filename)) for item in arquivo.infolist()]
     xml = etree.fromstring(dict((i.filename, data) for i, data in items)["word/document.xml"])
-    paragrafos = xml.xpath("//w:p", namespaces=ns)
-    titulo = next((p for p in paragrafos
-                   if "".join(p.xpath("./w:r/w:t/text()", namespaces=ns)) == contexto["titulo"]), None)
-    if titulo is None:
-        raise ValueError("O modelo não contém um parágrafo de título renderizado.")
-    # Mantém o espaço reservado sem exibir marcadores para membros opcionais vazios.
-    for p in paragrafos:
-        if not "".join(p.xpath("./w:r/w:t/text()", namespaces=ns)).strip():
-            for numero in p.xpath("./w:pPr/w:numPr", namespaces=ns):
-                numero.getparent().remove(numero)
-    for run in titulo.xpath("./w:r", namespaces=ns):
-        props = run.find("w:rPr", ns)
-        if props is None:
-            props = etree.Element("{" + ns["w"] + "}rPr")
-            run.insert(0, props)
-        for tag in ("sz", "szCs"):
-            size = props.find("w:" + tag, ns)
-            if size is None:
-                size = etree.SubElement(props, "{" + ns["w"] + "}" + tag)
-            size.set("{" + ns["w"] + "}val", str(round(fonte * 2)))
+    aplicar_composicao(xml, composicoes)
     with ZipFile(destino, "w") as arquivo:
         for item, data in items:
             if item.filename == "word/document.xml":
                 data = etree.tostring(xml, xml_declaration=True, encoding="UTF-8", standalone=True)
             arquivo.writestr(item, data)
+    return composicoes
 
 
 def localizar_soffice(explicito=None):
@@ -181,6 +168,7 @@ def escolher_conversor(nome, soffice):
 
 def gerar_pdf(docx, conversor, soffice):
     destino = docx.with_suffix(".pdf")
+    destino.unlink(missing_ok=True)
     if conversor == "libreoffice":
         with tempfile.TemporaryDirectory(prefix="ppeb-lo-") as profile:
             comando = [soffice, "-env:UserInstallation=" + Path(profile).as_uri(),
@@ -195,6 +183,27 @@ def gerar_pdf(docx, conversor, soffice):
     if not destino.is_file() or destino.stat().st_size == 0:
         raise RuntimeError("O conversor não produziu um PDF válido.")
     return destino
+
+
+def gerar_arquivos(modelo, docx, contexto, fonte, conversor, soffice, dpi):
+    limites = {}
+    # A composição por métricas também funciona no modo somente DOCX. Na
+    # exportação, o próprio Word/LibreOffice confirma o que realmente ficou visível.
+    for _ in range(57):
+        composicoes = gerar_docx(modelo, docx, contexto, fonte, limites)
+        if conversor is None:
+            return
+        pdf = gerar_pdf(docx, conversor, soffice)
+        problemas = conferir_pdf(pdf, contexto)
+        if not problemas:
+            gerar_png(pdf, dpi)
+            return
+        for chave in problemas:
+            if composicoes[chave].fonte <= FONTE_MINIMA:
+                raise ValueError(f"O texto de '{chave}' não ficou integralmente visível "
+                                 "na caixa fixa. Reduza o texto ou confira a fonte instalada.")
+            limites[chave] = composicoes[chave].fonte - 0.5
+    raise ValueError("Não foi possível ajustar o texto às caixas fixas.")
 
 
 def gerar_png(pdf, dpi):
@@ -222,9 +231,7 @@ def executar(args):
         try:
             with tempfile.TemporaryDirectory(prefix=".cartaz-", dir=args.saida) as staging:
                 docx = Path(staging) / f"Cartaz - {pasta}.docx"
-                gerar_docx(args.modelo, docx, ctx, fonte)
-                if conversor:
-                    gerar_png(gerar_pdf(docx, conversor, soffice), args.dpi)
+                gerar_arquivos(args.modelo, docx, ctx, fonte, conversor, soffice, args.dpi)
                 destino = args.saida / pasta
                 destino.mkdir(exist_ok=True)
                 for arquivo in Path(staging).iterdir():

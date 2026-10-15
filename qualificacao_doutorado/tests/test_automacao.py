@@ -12,6 +12,22 @@ from openpyxl import load_workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import run
+from layout import CAIXAS, NS, conferir_pdf
+
+
+def textos_modernos(tree):
+    return [" ".join(p.xpath("./w:r/w:t/text()", namespaces=NS))
+            for p in tree.xpath("//wp:anchor//w:txbxContent/w:p", namespaces=NS)]
+
+
+def geometria(tree):
+    return {a.find("wp:docPr", NS).get("name"):
+            (a.find("wp:positionH", NS).get("relativeFrom"),
+             a.find("wp:positionV", NS).get("relativeFrom"),
+             a.find("wp:positionH/wp:posOffset", NS).text,
+             a.find("wp:positionV/wp:posOffset", NS).text,
+             dict(a.find("wp:extent", NS).attrib))
+            for a in tree.xpath('//wp:anchor[starts-with(wp:docPr/@name,"PPEB_")]', namespaces=NS)}
 
 
 class AutomacaoTest(unittest.TestCase):
@@ -45,7 +61,7 @@ class AutomacaoTest(unittest.TestCase):
             self.assertIsNone(rendered.testzip())
             xml = rendered.read("word/document.xml")
             tree = etree.fromstring(xml)
-            textos = tree.xpath("//w:t/text()", namespaces=ns)
+            textos = textos_modernos(tree)
             self.assertIn("ADRIAN SOUZA DOS SANTOS", textos)
             self.assertIn("31/03/2026", textos)
             self.assertIn("14h00", textos)
@@ -57,7 +73,9 @@ class AutomacaoTest(unittest.TestCase):
             for nome in media:
                 self.assertEqual(template.read(nome), rendered.read(nome))
             before = etree.fromstring(template.read("word/document.xml"))
-            self.assertEqual(len(before.xpath("//w:p", namespaces=ns)), len(tree.xpath("//w:p", namespaces=ns)))
+            self.assertEqual(geometria(before), geometria(tree))
+            self.assertEqual(len(geometria(tree)), 7)
+            self.assertFalse(tree.xpath("//w:tbl", namespaces=ns))
 
     def test_caracteres_especiais_nao_quebram_xml(self):
         titulo = "Educação & sociedade: <escola> {{ texto literal }}"
@@ -65,7 +83,7 @@ class AutomacaoTest(unittest.TestCase):
         self.assertEqual(self.executar(), 0)
         with ZipFile(next((self.root / "saida").glob("*/*.docx"))) as z:
             tree = etree.fromstring(z.read("word/document.xml"))
-            self.assertIn(titulo, tree.xpath('//*[local-name()="t"]/text()'))
+            self.assertIn(titulo, textos_modernos(tree))
 
     def test_campos_opcionais_nao_deixam_rotulos(self):
         wb = load_workbook(self.planilha)
@@ -78,11 +96,36 @@ class AutomacaoTest(unittest.TestCase):
         self.assertEqual(self.executar(), 0)
         with ZipFile(next((self.root / "saida").glob("*/*.docx"))) as z:
             tree = etree.fromstring(z.read("word/document.xml"))
-            texts = tree.xpath('//*[local-name()="t"]/text()')
+            texts = textos_modernos(tree)
             self.assertEqual(sum(" - Membro Externo" in t for t in texts), 2)
             self.assertEqual(sum(" - Suplente" in t for t in texts), 1)
             ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-            self.assertEqual(len(tree.xpath("//w:pPr/w:numPr", namespaces=ns)), 5)
+            self.assertNotIn("• ", texts)
+            self.assertFalse(tree.xpath("//w:pPr/w:numPr", namespaces=ns))
+
+    def test_textos_longos_reduzem_fontes_sem_mover_caixas(self):
+        self.alterar("Título", "Educação, currículo e políticas de gestão democrática nas escolas públicas. " * 5)
+        self.alterar("Aluno", "ANA MARIA DE SOUZA DOS SANTOS DE ALMEIDA E SILVA")
+        self.alterar("Orientador", "Profª. Drª. Maria Aparecida de Albuquerque de Souza e Silva")
+        self.alterar("Sala", "Auditório do Núcleo de Estudos em Educação Básica, Campus Belém - UFPA")
+        self.assertEqual(self.executar(), 0)
+        with ZipFile(next((self.root / "saida").glob("*/*.docx"))) as z, \
+                ZipFile(run.BASE / "modelo_qualificacao_doutorado.docx") as original:
+            tree = etree.fromstring(z.read("word/document.xml"))
+            self.assertEqual(geometria(tree), geometria(etree.fromstring(original.read("word/document.xml"))))
+            for chave in ("titulo", "aluno", "orientador", "sala"):
+                sizes = tree.xpath(f'//wp:anchor[wp:docPr/@name="PPEB_{chave}"]//w:sz/@w:val', namespaces=NS)
+                self.assertTrue(sizes)
+                self.assertLess(max(map(int, sizes)), CAIXAS[chave].fonte * 2)
+            for chave in CAIXAS:
+                modern = tree.xpath(f'//wp:anchor[wp:docPr/@name="PPEB_{chave}"]//w:t/text()', namespaces=NS)
+                fallback = tree.xpath(f'//v:shape[@id="PPEB_{chave}"]//w:t/text()', namespaces=NS)
+                self.assertEqual(modern, fallback)
+
+    def test_texto_impossivel_de_encaixar_falha_sem_cortar(self):
+        self.alterar("Título", "Texto enorme " * 1000)
+        self.assertEqual(self.executar(), 1)
+        self.assertFalse(list((self.root / "saida").glob("*/*.docx")))
 
     def test_nao_sobrescreve_sem_opcao(self):
         self.assertEqual(self.executar(), 0)
@@ -143,6 +186,42 @@ class AutomacaoTest(unittest.TestCase):
             code = run.main(["--planilha", str(self.planilha), "--saida", str(self.root / "saida")])
         self.assertEqual(code, 1)
         self.assertFalse(list((self.root / "saida").glob("*/*.docx")))
+
+    @unittest.skipUnless(run.localizar_soffice(), "LibreOffice não disponível")
+    def test_pdf_real_preserva_caixas_e_texto_curto_e_longo(self):
+        import pymupdf
+        variantes = [
+            {"Título": "Educação e currículo"},
+            {},  # Dados do documento enviado.
+            {"Título": "Educação, currículo e políticas de gestão democrática nas escolas públicas. " * 5,
+             "Aluno": "ANA MARIA DE SOUZA DOS SANTOS DE ALMEIDA E SILVA",
+             "Orientador": "Profª. Drª. Maria Aparecida de Albuquerque de Souza e Silva",
+             "Sala": "Auditório do Núcleo de Estudos em Educação Básica, Campus Belém - UFPA",
+             "Membro Externo 1": "Profª. Drª. Maria Aparecida de Albuquerque de Souza e Silva de Almeida",
+             "Membro Externo 2": "Prof. Dr. José de Albuquerque de Souza dos Santos de Almeida",
+             "Universidade Externo 1": "Universidade Federal do Pará",
+             "Universidade Externo 2": "Universidade Federal do Paraná"},
+        ]
+        for i, alteracoes in enumerate(variantes):
+            original = load_workbook(run.BASE / "dados_qualificacao_doutorado.xlsx")
+            original.save(self.planilha)
+            original.close()
+            for chave, valor in alteracoes.items():
+                self.alterar(chave, valor)
+            ctx = run.ler_planilha(self.planilha)[0][2]
+            saida = self.root / f"renderizado-{i}"
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                code = run.main(["--planilha", str(self.planilha), "--saida", str(saida), "--dpi", "72"])
+            self.assertEqual(code, 0, alteracoes)
+            pdf = next(saida.glob("*/*.pdf"))
+            self.assertEqual(conferir_pdf(pdf, ctx), [])
+            with pymupdf.open(pdf) as doc:
+                self.assertEqual(len(doc), 1)
+                # Verifica os retângulos efetivamente desenhados, além das âncoras do DOCX.
+                rects = [d["rect"] for d in doc[0].get_drawings()]
+                for caixa in CAIXAS.values():
+                    target = pymupdf.Rect(caixa.x, caixa.y, caixa.x + caixa.largura, caixa.y + caixa.altura)
+                    self.assertTrue(any(max(abs(a-b) for a,b in zip(rect, target)) < 1 for rect in rects), target)
 
 
 if __name__ == "__main__":

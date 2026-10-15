@@ -1,8 +1,15 @@
 # Cartazes de qualificação de doutorado
 
 Automação do cartaz enviado, com o mesmo fluxo de planilha → documento → imagem
-da automação de mestrado. O modelo mantém as imagens, o cabeçalho, os marcadores,
-as fontes e as posições do DOCX original. A automação de mestrado permanece intacta.
+da automação de mestrado. O modelo mantém a arte original e usa caixas de texto
+ancoradas na página, com posição e tamanho fixos. Títulos ou nomes maiores não
+empurram os demais campos nem sobrepõem o rodapé.
+
+O script mede as linhas e reduz somente a fonte da caixa que precisa de espaço.
+O ajuste abrange título, autoria, orientador, banca, data, hora e local. Na
+exportação, confere o texto visível de cada caixa no PDF e, se necessário, reduz
+a fonte novamente antes de gerar a imagem. O tamanho mínimo é 8 pontos; textos
+que ainda não caibam causam erro, sem entregar um cartaz cortado.
 
 ## Uso no Windows
 
@@ -58,7 +65,8 @@ ele for chamado. Nenhum serviço ou credencial é necessário.
 Preserve os cabeçalhos. São obrigatórios **Aluno**, **Título**, **Orientador**,
 **Presidente**, **Membro Interno**, **Membro Externo 1**, **Data**, **Hora** e **Sala**.
 Os demais membros externos e os dois suplentes são opcionais; posições vazias
-mantêm o espaçamento reservado no cartaz. Universidades ficam em colunas separadas.
+não exibem marcadores, e a caixa da banca mantém as mesmas dimensões.
+Universidades ficam em colunas separadas.
 Não escreva a função (Presidente, Suplente etc.) no nome: o script a adiciona.
 
 Digite os nomes dos professores com a titulação desejada, como `Profª. Drª. Nome`.
@@ -69,15 +77,21 @@ titulações e grafia: revise-os antes de divulgar.
 - **Data**: `31/03/2026`, `2026-03-31` ou uma célula de data do Excel.
 - **Hora**: `14:00`, `14h00` ou uma célula de hora do Excel.
 - **Sala**: descrição completa, como `Sala NEB-02 / NEB-UFPA`.
-- **Fonte Título**: opcional, em pontos, entre 8 e 36. `21` reproduz o exemplo;
-  se vazia, o script usa 21, 18 ou 16 conforme o comprimento do título.
+- **Fonte Título**: tamanho máximo desejado, entre 8 e 36 pontos. Se vazia,
+  o máximo é 21. O script reduz o tamanho quando necessário para caber na caixa,
+  inclusive quando esta coluna está preenchida.
 
 Use valores diretos, sem fórmulas. Alunos duplicados, campos obrigatórios vazios
-e datas inválidas impedem a execução antes de gerar documentos. Na conversão,
-um PDF com mais de uma página é tratado como erro: reduza a fonte do título ou
-ajuste o modelo. DOCX sozinho não permite verificar o número de páginas.
-Nomes muito longos também podem exigir ajustes manuais; nenhuma regra de
-comprimento de texto garante que todo conteúdo caiba.
+e datas inválidas impedem a execução antes de gerar documentos.
+O modo somente DOCX ajusta as linhas por métricas de fonte, com uma margem de
+segurança. A conferência do resultado efetivamente renderizado requer a geração
+de PDF/PNG com Word ou LibreOffice. Se a fonte mínima não bastar, reduza o texto
+na planilha. O script nunca aumenta a caixa para acomodar conteúdo.
+
+Ao atualizar uma instalação antiga, substitua também
+`modelo_qualificacao_doutorado.docx` e inclua `layout.py`. O script novo exige o
+modelo com caixas fixas. Preserve sua planilha preenchida; seus dados continuam
+compatíveis com esta versão.
 
 O script retorna código diferente de zero quando há falhas e informa quais
 linhas falharam. Os arquivos de cada cartaz são preparados em uma pasta temporária
@@ -90,7 +104,11 @@ passaram permanecem disponíveis se uma linha posterior falhar.
 python -m unittest discover -s tests -v
 ```
 
-Os testes verificam preenchimento, caracteres especiais, integridade do modelo,
-datas/horários, proteção de arquivos e rejeição de dados inválidos.
+Os testes verificam preenchimento, caracteres especiais, preservação da arte,
+datas/horários, proteção de arquivos e rejeição de dados inválidos. Também
+verificam que textos maiores reduzem a fonte sem mudar a geometria das caixas.
+Se LibreOffice estiver disponível (no PATH ou em `SOFFICE_PATH`), executam a
+conversão de exemplos curtos e longos, conferindo todo o texto e as posições dos
+retângulos no PDF. Esse teste é marcado como ignorado quando não há LibreOffice.
 O exemplo também deve ser executado com `python run.py --saida /caminho/de/teste`
 para validar o conversor instalado e conferir visualmente o resultado.
